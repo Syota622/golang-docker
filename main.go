@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
@@ -13,7 +14,7 @@ import (
 
 var db *sql.DB
 
-// album represents data about a record album.
+// アルバムの構造体
 type Album struct {
 	ID     int64   `json:"id"`
 	Title  string  `json:"title"`
@@ -21,6 +22,7 @@ type Album struct {
 	Price  float64 `json:"price"`
 }
 
+// アルバム一覧を取得する
 func getAlbums(c *gin.Context) {
 	var albums []Album
 
@@ -47,6 +49,7 @@ func getAlbums(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, albums)
 }
 
+// アルバムを追加する
 func postAlbums(c *gin.Context) {
 	var newAlbum Album
 
@@ -77,6 +80,7 @@ func postAlbums(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, &createdAlbum)
 }
 
+// アルバムを取得する
 func getAlbumByID(c *gin.Context) {
 	id := c.Param("id")
 
@@ -92,6 +96,7 @@ func getAlbumByID(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, &album)
 }
 
+// アルバムを更新する
 func updateAlbumByID(c *gin.Context) {
 	var updateAlbum Album
 
@@ -111,6 +116,7 @@ func updateAlbumByID(c *gin.Context) {
 	c.IndentedJSON(http.StatusNoContent, &updateAlbum)
 }
 
+// アルバムを削除する
 func deleteAlbumByID(c *gin.Context) {
 	id := c.Param("id")
 
@@ -132,34 +138,49 @@ func deleteAlbumByID(c *gin.Context) {
 	c.IndentedJSON(http.StatusNoContent, &album)
 }
 
+// mainを実行する
 func main() {
 	config := mysql.Config{
 		User:                 os.Getenv("DBUSER"),
 		Passwd:               os.Getenv("DBPASS"),
 		Net:                  "tcp",
-		Addr:                 "127.0.0.1:3306",
+		Addr:                 "db:3306",
 		DBName:               "myapp",
 		AllowNativePasswords: true,
 	}
 
 	var err error
-	db, err = sql.Open("mysql", config.FormatDSN())
+	for i := 0; i < 5; i++ { // 最大5回リトライ
+
+		// データベースに接続
+		db, err = sql.Open("mysql", config.FormatDSN())
+		if err != nil {
+			log.Println("データベースを開くのに失敗しました:", err)
+			time.Sleep(5 * time.Second) // 5秒待機
+			continue
+		}
+
+		// データベースにpingを送信して接続を確認
+		err = db.Ping()
+		if err == nil {
+			break // 接続成功
+		}
+
+		log.Println("データベースへの接続に失敗しました。再試行します...")
+		time.Sleep(5 * time.Second) // 再試行の前に5秒待機
+	}
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("データベースへの接続に最終的に失敗しました:", err)
 	}
+	fmt.Println("データベースに接続しました。")
 
-	pingErr := db.Ping()
-	if pingErr != nil {
-		log.Fatal(pingErr)
-	}
-	fmt.Println("Connected!")
-
+	// ルーターの作成
 	router := gin.Default()
-	router.GET("/albums", getAlbums)
-	router.GET("/albums/:id", getAlbumByID)
-	router.POST("/albums", postAlbums)
-	router.PATCH("/albums/:id", updateAlbumByID)
-	router.DELETE("/albums/:id", deleteAlbumByID)
+	router.GET("/albums", getAlbums)              // アルバム一覧を取得する
+	router.GET("/albums/:id", getAlbumByID)       // アルバムを取得する
+	router.POST("/albums", postAlbums)            // アルバムを追加する
+	router.PATCH("/albums/:id", updateAlbumByID)  // アルバムを更新する
+	router.DELETE("/albums/:id", deleteAlbumByID) // アルバムを削除する
 
-	router.Run("localhost:8080")
+	router.Run(":8080")
 }
